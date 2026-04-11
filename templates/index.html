@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nexus</title>
+</head>
+<body>
+    <h1>Nexus</h1>
+    <p>City Events Finder</p>
+
+    <form method="GET" action="/">
+        <input type="text" name="city" placeholder="Enter a city" value="{{ city }}">
+        <button type="submit">Search</button>
+    </form>
+
+    {% if city %}
+        <h2>You searched for: {{ city }}</h2>
+        <h3>Upcoming Events</h3>
+
+        {% if events %}
+            {% for event in events %}
+                <div>
+                    <p><strong>{{ event.title }}</strong></p>
+                    <p>Date: {{ event.date }}</p>
+                    <p>Venue: {{ event.venue }}</p>
+                    <hr>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No events found.</p>
+        {% endif %}
+    {% endif %}
+</body>
+</html>

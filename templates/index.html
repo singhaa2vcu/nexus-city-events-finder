@@ -1,33 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Nexus</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus - City Events Finder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Nexus</h1>
-    <p>City Events Finder</p>
+    <div class="page">
+        <div class="container">
+            <header class="hero">
+                <h1>Nexus</h1>
+                <p class="subtitle">City Events Finder</p>
+            </header>
 
-    <form method="GET" action="/">
-        <input type="text" name="city" placeholder="Enter a city" value="{{ city }}">
-        <button type="submit">Search</button>
-    </form>
+            <form method="GET" action="/" class="search-form">
+                <input
+                    type="text"
+                    name="city"
+                    placeholder="Enter a city"
+                    value="{{ city }}"
+                >
+                <button type="submit">Search</button>
+            </form>
 
-    {% if city %}
-        <h2>You searched for: {{ city }}</h2>
-        <h3>Upcoming Events</h3>
-
-        {% if events %}
-            {% for event in events %}
-                <div>
-                    <p><strong>{{ event.title }}</strong></p>
-                    <p>Date: {{ event.date }}</p>
-                    <p>Venue: {{ event.venue }}</p>
-                    <hr>
+            {% if city %}
+                <div class="results-header">
+                    <h2>Results for "{{ city }}"</h2>
+                    <p>{{ events|length }} event(s) found</p>
                 </div>
-            {% endfor %}
-        {% else %}
-            <p>No events found.</p>
-        {% endif %}
-    {% endif %}
+
+                {% if events %}
+                    <div class="events-grid">
+                        {% for event in events %}
+                            <div class="event-card">
+                                <div class="event-source">{{ event.source }}</div>
+                                <h3>{{ event.title }}</h3>
+                                <p><span>Date:</span> {{ event.date }}</p>
+                                <p><span>Venue:</span> {{ event.venue }}</p>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <p>No events found for this city.</p>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="empty-state">
+                    <p>Search a city to see upcoming events from multiple sources.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
 </body>
 </html>

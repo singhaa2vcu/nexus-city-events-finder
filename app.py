@@ -4,43 +4,70 @@ import os
 
 app = Flask(__name__)
 
-TICKETMASTER_API_KEY = os.getenv("TICKETMASTER_API_KEY")
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
-PREDICTHQ_API_KEY = os.getenv("PREDICTHQ_API_KEY")
+TICKETMASTER_API_KEY = (os.getenv("TICKETMASTER_API_KEY") or "").strip().strip('"')
+SERPAPI_API_KEY = (os.getenv("SERPAPI_API_KEY") or "").strip().strip('"')
+PREDICTHQ_API_KEY = (os.getenv("PREDICTHQ_API_KEY") or "").strip().strip('"')
 
 
-# ---------- API 1: Ticketmaster ----------
+def normalize_city(city):
+    city = city.strip()
+    lower = city.lower()
+
+    if "washington" in lower:
+        return "Washington"
+    if "new york" in lower:
+        return "New York"
+    if "los angeles" in lower:
+        return "Los Angeles"
+    if "chicago" in lower:
+        return "Chicago"
+    if "san francisco" in lower:
+        return "San Francisco"
+    if "houston" in lower:
+        return "Houston"
+    if "miami" in lower:
+        return "Miami"
+    if "boston" in lower:
+        return "Boston"
+
+    return city.title()
+
+
 def get_ticketmaster_events(city):
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    if not TICKETMASTER_API_KEY:
+        print("Ticketmaster key missing")
+        return []
 
+    url = "https://app.ticketmaster.com/discovery/v2/events.json"
     params = {
         "apikey": TICKETMASTER_API_KEY,
         "city": city,
-        "size": 5
+        "size": 10,
+        "sort": "date,asc"
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
         data = response.json()
 
         events = []
+        for event in data.get("_embedded", {}).get("events", []):
+            title = event.get("name")
+            date = event.get("dates", {}).get("start", {}).get("localDate")
 
-        if "_embedded" in data:
-            for event in data["_embedded"]["events"]:
-                name = event.get("name")
-                date = event.get("dates", {}).get("start", {}).get("localDate")
+            venue = "Unknown"
+            venues = event.get("_embedded", {}).get("venues", [])
+            if venues:
+                venue = venues[0].get("name", "Unknown")
 
-                venue = "Unknown"
-                if "_embedded" in event and "venues" in event["_embedded"]:
-                    venue = event["_embedded"]["venues"][0].get("name")
-
-                if name and date and venue:
-                    events.append({
-                        "title": name,
-                        "date": date,
-                        "venue": venue,
-                        "source": "Ticketmaster"
-                    })
+            if title and date:
+                events.append({
+                    "title": title,
+                    "date": date,
+                    "venue": venue,
+                    "source": "Ticketmaster"
+                })
 
         return events
 
@@ -49,13 +76,12 @@ def get_ticketmaster_events(city):
         return []
 
 
-# ---------- API 2: SerpApi ----------
 def get_serpapi_events(city):
     if not SERPAPI_API_KEY:
+        print("SerpApi key missing")
         return []
 
     url = "https://serpapi.com/search.json"
-
     params = {
         "engine": "google_events",
         "q": f"Events in {city}",
@@ -63,19 +89,19 @@ def get_serpapi_events(city):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
         data = response.json()
 
         events = []
-
-        for event in data.get("events_results", []):
+        for event in data.get("events_results", [])[:10]:
             title = event.get("title")
 
             date_info = event.get("date")
             if isinstance(date_info, dict):
                 date = date_info.get("start_date", "")
             else:
-                date = str(date_info) if date_info else ""
+                date = str(date_info).strip() if date_info else ""
 
             address = event.get("address")
             if isinstance(address, list) and address:
@@ -83,7 +109,7 @@ def get_serpapi_events(city):
             else:
                 venue = "Unknown"
 
-            if title and date and venue:
+            if title and date:
                 events.append({
                     "title": title,
                     "date": date,
@@ -98,9 +124,9 @@ def get_serpapi_events(city):
         return []
 
 
-# ---------- API 3: PredictHQ ----------
 def get_predicthq_events(city):
     if not PREDICTHQ_API_KEY:
+        print("PredictHQ key missing")
         return []
 
     url = "https://api.predicthq.com/v1/events/"
@@ -110,25 +136,27 @@ def get_predicthq_events(city):
     }
     params = {
         "q": city,
-        "limit": 5,
+        "limit": 3,
         "sort": "start"
     }
 
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response.raise_for_status()
         data = response.json()
 
         events = []
-
         for event in data.get("results", []):
             title = event.get("title")
             date = event.get("start", "")
 
             location = event.get("location")
             if isinstance(location, list):
+                venue = "Location unavailable"
+            elif location:
                 venue = str(location)
             else:
-                venue = "Unknown"
+                venue = "Location unavailable"
 
             if title and date:
                 events.append({
@@ -145,16 +173,15 @@ def get_predicthq_events(city):
         return []
 
 
-# ---------- Clean data ----------
 def remove_duplicates(events):
     seen = set()
     unique_events = []
 
     for event in events:
         key = (
-            event["title"].lower().strip(),
-            event["date"].lower().strip(),
-            event["venue"].lower().strip()
+            event.get("title", "").lower().strip(),
+            event.get("date", "").lower().strip(),
+            event.get("venue", "").lower().strip()
         )
 
         if key not in seen:
@@ -165,27 +192,54 @@ def remove_duplicates(events):
 
 
 def sort_events(events):
-    return sorted(events, key=lambda x: x["date"] if x["date"] else "")
+    return sorted(events, key=lambda x: x.get("date", ""))
 
 
-# ---------- Routes ----------
+def balance_events(ticketmaster_events, serp_events, predicthq_events, max_total=12):
+    balanced = []
+
+    balanced.extend(ticketmaster_events[:4])
+    balanced.extend(serp_events[:4])
+    balanced.extend(predicthq_events[:2])
+
+    remaining = ticketmaster_events[4:] + serp_events[4:] + predicthq_events[2:]
+
+    for event in remaining:
+        if len(balanced) >= max_total:
+            break
+        balanced.append(event)
+
+    return balanced
+
+
 @app.route("/")
 def home():
-    city = request.args.get("city", "")
+    city = request.args.get("city", "").strip()
     events = []
 
     if city:
-        tm_events = get_ticketmaster_events(city)
-        serp_events = get_serpapi_events(city)
-        phq_events = get_predicthq_events(city)
+        api_city = normalize_city(city)
 
-        print("Ticketmaster events:", len(tm_events))
+        ticketmaster_events = get_ticketmaster_events(api_city)
+        serp_events = get_serpapi_events(api_city)
+        predicthq_events = get_predicthq_events(api_city)
+
+        print("Original city:", city)
+        print("Normalized city:", api_city)
+        print("Ticketmaster key loaded:", bool(TICKETMASTER_API_KEY))
+        print("SerpApi key loaded:", bool(SERPAPI_API_KEY))
+        print("PredictHQ key loaded:", bool(PREDICTHQ_API_KEY))
+        print("Ticketmaster events:", len(ticketmaster_events))
         print("SerpApi events:", len(serp_events))
-        print("PredictHQ events:", len(phq_events))
+        print("PredictHQ events:", len(predicthq_events))
 
-        events = tm_events + serp_events + phq_events
-        events = remove_duplicates(events)
+        all_events = balance_events(ticketmaster_events, serp_events, predicthq_events, max_total=12)
+        print("Combined events before dedupe:", len(all_events))
+
+        events = remove_duplicates(all_events)
         events = sort_events(events)
+
+        print("Final events after dedupe/sort:", len(events))
 
     return render_template("index.html", city=city, events=events)
 
@@ -196,4 +250,5 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=True)
